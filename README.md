@@ -415,7 +415,7 @@ docker push <your-dockerhub-username>/order-service:v1.0
 
 ### 13.2 How Your Lab Will Be Graded
 
-The TA will run your project using **only** the images you pushed — no source code, no `build` step. The TA will use the following `docker-compose.yml`, replacing the image names with yours:
+I will run your project using **only** the images you pushed — no source code, no `build` step. I will use the following `docker-compose.yml`, replacing the image names with yours:
 
 ```yaml
 services:
