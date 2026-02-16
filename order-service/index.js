@@ -6,6 +6,8 @@ app.use(express.json());
 
 const PORT = 3003;
 
+
+
 // TODO: Create a PostgreSQL connection pool
 // HINT: Same pattern as user-service and product-service
 const pool = new Pool({
@@ -36,12 +38,24 @@ const waitForDB = async (retries = 10, delay = 2000) => {
 // Return the user object if found, or null if not
 const validateUser = async (userId) => {
   try {
-    const response = await fetch(`http://user-service:3001/users/${userId}`);
-    if (!response.ok) return null;
-    return await response.json();
+    const response = await fetch(
+      `http://user-service:3001/users/${userId}`
+    );
+
+    if (response.status === 404) {
+      return { found: false };
+    }
+
+    if (!response.ok) {
+      return { error: true };
+    }
+
+    const data = await response.json();
+    return { found: true, data };
+
   } catch (err) {
-    console.error('Error validating user:', err);
-    return null;
+    console.error('User service unreachable:', err.message);
+    return { unreachable: true };
   }
 };
 
@@ -50,14 +64,27 @@ const validateUser = async (userId) => {
 // Return the product object if found, or null if not
 const validateProduct = async (productId) => {
   try {
-    const response = await fetch(`http://product-service:3002/products/${productId}`);
-    if (!response.ok) return null;
-    return await response.json();
+    const response = await fetch(
+      `http://product-service:3002/products/${productId}`
+    );
+
+    if (response.status === 404) {
+      return { found: false };
+    }
+
+    if (!response.ok) {
+      return { error: true };
+    }
+
+    const data = await response.json();
+    return { found: true, data };
+
   } catch (err) {
-    console.error('Error validating product:', err);
-    return null;
+    console.error('Product service unreachable:', err.message);
+    return { unreachable: true };
   }
 };
+
 
 // TODO: Implement GET /orders - List all orders
 // Query: SELECT * FROM orders ORDER BY id
@@ -81,26 +108,46 @@ app.get('/orders', async (req, res) => {
 //   6. Insert into orders table
 // Query: INSERT INTO orders (user_id, product_id, quantity, total_price) VALUES ($1, $2, $3, $4) RETURNING *
 app.post('/orders', async (req, res) => {
-  const { userId, productId, quantity } = req.body;
-  if (!userId || !productId || !quantity) {
-    return res.status(400).json({ error: 'userId, productId, Quantity are required' });
+  const { user_id, product_id, quantity } = req.body;
+  if (!user_id || !product_id || !quantity) {
+    return res.status(400).json({ error: 'user_id, product_id, quantity are required' });
   }
 
   try {
-    const user = await validateUser(userId);
-    if(!user)
-      {
-        return res.status(404).json({error: 'user not found'});
-      }
-    const product = await validateProduct(productId);
-    if(!product)
-    {
-      return res.status(404).json({error: 'product not found'});
+    
+    const userCheck = await validateUser(user_id);
+    if (userCheck.unreachable) {
+      return res.status(503).json({
+        error: 'User Service is unavailable'
+      });
     }
+    if (!userCheck.found) {
+      return res.status(404).json({
+      error: 'user not found'
+      });
+    }
+
+    const user = userCheck.data;
+
+    const productCheck = await validateProduct(product_id);
+
+    if (productCheck.unreachable) {
+      return res.status(503).json({
+      error: 'Product Service is unavailable'
+      });
+    }
+
+    if (!productCheck.found) {
+      return res.status(404).json({
+      error: 'product not found'
+      });
+    }
+
+    const product = productCheck.data;
     const totalPrice = product.price * quantity;
     const result = await pool.query(
       'INSERT INTO orders (user_id, product_id, quantity, total_price) VALUES ($1, $2, $3, $4) RETURNING *',
-      [userId, productId, quantity, totalPrice]
+      [user_id, product_id, quantity, totalPrice]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -145,3 +192,21 @@ const initDB = async () => {
   `);
   const { rowCount } = await pool.query('SELECT 1 FROM orders LIMIT 1');
 };
+
+
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+
+    res.status(200).json({
+      status: "ok",
+    });
+  } catch (err) {
+    console.error("Health check failed:", err);
+    res.status(500).json({
+      status: "error",
+      service: "order-service",
+      db: "disconnected",
+    });
+  }
+});

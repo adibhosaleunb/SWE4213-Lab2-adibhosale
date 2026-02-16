@@ -113,3 +113,20 @@ const initDB = async () => {
     `);
   }
 };
+
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+
+    res.status(200).json({
+      status: "ok",
+    });
+  } catch (err) {
+    console.error("Health check failed:", err);
+    res.status(500).json({
+      status: "error",
+      service: "product-service",
+      db: "disconnected",
+    });
+  }
+});
